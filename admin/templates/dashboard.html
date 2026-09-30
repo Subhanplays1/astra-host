@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<section class="grid cards">
+  <div class="card stat">
+    <span class="label">Instances</span>
+    <strong>{{ stats.vps.total }}</strong>
+    <span class="dim">managed</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Online</span>
+    <strong class="ok">{{ stats.vps.online }}</strong>
+    <span class="dim">running</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Offline</span>
+    <strong>{{ stats.vps.offline }}</strong>
+    <span class="dim">stopped</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Suspended</span>
+    <strong class="warn">{{ stats.vps.suspended }}</strong>
+    <span class="dim">held</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Users</span>
+    <strong>{{ stats.users }}</strong>
+    <span class="dim">tracked</span>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="card">
+    <h2>Node</h2>
+    {% set host = stats.host %}
+    {% macro bar(label, value) %}
+      <div class="meter">
+        <span class="label">{{ label }}</span>
+        <div class="track"><span style="width: {{ (value or 0)|round|int }}%"></span></div>
+        <span class="mono val">{{ value if value is not none else "n/a" }}{{ "%" if value is not none else "" }}</span>
+      </div>
+    {% endmacro %}
+    {{ bar("CPU", host.cpu_percent) }}
+    {{ bar("Memory", host.memory_percent) }}
+    {{ bar("Storage", host.disk_percent) }}
+    <div class="kv">
+      <span>Uptime</span>
+      <span class="mono">{{ (host.uptime_seconds or 0) // 86400 }}d {{ ((host.uptime_seconds or 0) % 86400) // 3600 }}h</span>
+    </div>
+    {% if host.memory_total_gb %}
+    <div class="kv"><span>Memory</span><span class="mono">{{ host.memory_used_gb }} / {{ host.memory_total_gb }} GB</span></div>
+    {% endif %}
+    {% if host.disk_total_gb %}
+    <div class="kv"><span>Storage</span><span class="mono">{{ host.disk_used_gb }} / {{ host.disk_total_gb }} GB</span></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Platform</h2>
+    <div class="kv"><span>LXD / Incus</span>
+      <span class="pill {{ 'ok' if stats.provider.connected else 'bad' }}">
+        {{ "CONNECTED" if stats.provider.connected else "OFFLINE" }}
+      </span>
+    </div>
+    <div class="kv"><span>Managed containers</span><span class="mono">{{ stats.provider.managed }}</span></div>
+    <div class="kv"><span>Provisioning</span>
+      <span class="pill {{ 'ok' if stats.settings.vps_enabled == '1' else 'bad' }}">
+        {{ "ENABLED" if stats.settings.vps_enabled == "1" else "DISABLED" }}
+      </span>
+    </div>
+    <div class="kv"><span>Required invites</span><span class="mono">{{ stats.settings.required_invites }}</span></div>
+    <div class="kv"><span>Limits</span><span class="mono">{{ stats.settings.max_vps_per_user }} / user · {{ stats.settings.max_total_vps }} total</span></div>
+    {% if stats.astra %}
+    <div class="astra">
+      <span class="pill">{{ stats.astra.state }}</span>
+      <p>{{ stats.astra.message }}</p>
+    </div>
+    {% endif %}
+    {% if stats.panel.url %}
+    <div class="kv"><span>Panel URL</span><span class="mono">{{ stats.panel.url }}</span></div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Settings</h2>
+  <form method="post" action="{{ url_for('settings') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid two">
+      <label class="check">
+        <input type="checkbox" name="maintenance_mode" {% if stats.settings.maintenance_mode == "1" %}checked{% endif %}>
+        Maintenance mode (block new deployments)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="vps_enabled" {% if stats.settings.vps_enabled == "1" %}checked{% endif %}>
+        Allow new VPS deployments
+      </label>
+    </div>
+    <label for="required_invites">Required invites</label>
+    <input id="required_invites" name="required_invites" type="number" min="0" max="1000"
+           value="{{ stats.settings.required_invites }}" class="short">
+    <button class="btn primary" type="submit">Save settings</button>
+  </form>
+</section>
+
+<section class="grid two">
+  <div class="card">
+    <h2>Recent deployments</h2>
+    {% if stats.activity.deployments %}
+    <ul class="list">
+      {% for d in stats.activity.deployments %}
+      <li><span class="mono">{{ d.created_at[:19] }}</span> · <span class="mono">{{ d.vps_id }}</span> · {{ d.stage }} · {{ d.status }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="dim">No deployments yet.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Recent admin actions</h2>
+    {% if stats.activity.admin_actions %}
+    <ul class="list">
+      {% for a in stats.activity.admin_actions %}
+      <li><span class="mono">{{ a.created_at[:19] }}</span> · <span class="mono">{{ a.admin_id }}</span> · {{ a.action }} · {{ a.result }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="dim">No admin actions recorded.</p>{% endif %}
+  </div>
+</section>
+
+{% if stats.activity.errors %}
+<section class="card bad">
+  <h2>Failures</h2>
+  <ul class="list">
+    {% for e in stats.activity.errors %}
+    <li><span class="mono">{{ e.created_at[:19] }}</span> · <span class="mono">{{ e.vps_id or "—" }}</span> · {{ e.stage }} · {{ e.message }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

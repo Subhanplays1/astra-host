@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Instances{% endblock %}
+{% block content %}
+<h1>Instances</h1>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Total</span><strong>{{ counts.total }}</strong></div>
+  <div class="card stat"><span class="label">Online</span><strong class="ok">{{ counts.online }}</strong></div>
+  <div class="card stat"><span class="label">Offline</span><strong>{{ counts.offline }}</strong></div>
+  <div class="card stat"><span class="label">Suspended</span><strong class="warn">{{ counts.suspended }}</strong></div>
+</section>
+
+<section class="card">
+  <form method="get" action="{{ url_for('vps_list') }}" class="search">
+    <input type="search" name="q" value="{{ q }}" placeholder="Filter by id, name, owner or status">
+    <button class="btn ghost" type="submit">Filter</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Instance</th><th>Owner</th><th>Status</th><th>Spec</th><th>Node</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>
+          <span class="mono strong">{{ r.vps_id }}</span><br>
+          <span class="dim mono">{{ r.container_name }}</span>
+        </td>
+        <td class="mono">{{ r.owner_id }}</td>
+        <td><span class="pill {{ 'ok' if r.status == 'running' else ('warn' if r.status == 'suspended' else '') }}">{{ r.status }}</span></td>
+        <td class="mono">{{ r.memory_mb }} MB · {{ r.cpus }}C · {{ r.disk_gb }} GB<br><span class="dim">{{ r.os_image }}</span></td>
+        <td class="mono">{{ r.ip_address or "—" }}{% if r.ssh_port %}<br><span class="dim">ssh {{ r.ssh_port }}</span>{% endif %}</td>
+        <td class="actions">
+          {% for action, label in (("start", "Start"), ("stop", "Stop"), ("restart", "Restart"),
+                                   ("suspend", "Suspend"), ("unsuspend", "Resume"),
+                                   ("emergency_stop", "Force stop")) %}
+          <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action=action) }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn tiny" type="submit">{{ label }}</button>
+          </form>
+          {% endfor %}
+          <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action='remove') }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="text" name="confirm" class="confirm-input" placeholder="type id to confirm"
+                   pattern="{{ r.vps_id }}" title="Type {{ r.vps_id }} to confirm" required>
+            <button class="btn tiny danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="dim">No instances{% if q %} match “{{ q }}”{% endif %}.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

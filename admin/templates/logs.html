@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+
+<section class="card">
+  <h2>Admin actions</h2>
+  <table>
+    <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Result</th><th>Source</th></tr></thead>
+    <tbody>
+    {% for a in admin_actions %}
+      <tr>
+        <td class="mono">{{ a.created_at[:19] }}</td>
+        <td class="mono">{{ a.admin_id }}</td>
+        <td>{{ a.action }}</td>
+        <td class="mono">{{ a.target or "—" }}</td>
+        <td><span class="pill {{ 'ok' if a.result == 'ok' else 'bad' }}">{{ a.result }}</span></td>
+        <td class="dim">{{ a.source }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="dim">No admin actions recorded.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Deployment events</h2>
+  <table>
+    <thead><tr><th>When</th><th>Owner</th><th>Instance</th><th>Stage</th><th>Status</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr>
+        <td class="mono">{{ e.created_at[:19] }}</td>
+        <td class="mono">{{ e.owner_id }}</td>
+        <td class="mono">{{ e.vps_id or "—" }}</td>
+        <td>{{ e.stage }}</td>
+        <td><span class="pill {{ 'ok' if e.status not in ('failed', 'error') else 'bad' }}">{{ e.status }}</span></td>
+        <td class="dim">{{ (e.message or "")[:160] }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="dim">No deployment events.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if activity.errors %}
+<section class="card bad">
+  <h2>Failures</h2>
+  <ul class="list">
+    {% for e in activity.errors %}
+    <li><span class="mono">{{ e.created_at[:19] }}</span> · <span class="mono">{{ e.vps_id or "—" }}</span> · {{ e.stage }} · {{ e.message }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

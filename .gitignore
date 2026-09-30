@@ -1,0 +1,18 @@
+# secrets / runtime state — never commit
+.env
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# editors / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
