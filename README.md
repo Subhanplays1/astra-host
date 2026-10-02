@@ -174,6 +174,19 @@ ADMIN_PANEL_RATE_LIMIT=10     # requests per window per IP
 TUNNEL_PROVIDER=local         # local | localhost.run | cloudflare | tailscale | custom
 ```
 
+To expose it with **localhost.run** (free, no account) put the panel on `8080`:
+
+```env
+ADMIN_PANEL_ENABLED=1
+ADMIN_PANEL_PORT=8080
+TUNNEL_PROVIDER=localhost.run
+TUNNEL_LOCALHOSTRUN=ssh -R 80:localhost:{port} localhost.run
+```
+
+`{port}` is substituted with `ADMIN_PANEL_PORT` at startup. ssh options for
+non-interactive use (`StrictHostKeyChecking`, keepalives, `ExitOnForwardFailure`)
+are appended automatically, so a first connection can never hang the bot.
+
 **Sign-in flow**
 
 1. `/admin login` → one-time code (single use, expires in `ADMIN_PANEL_LOGIN_TTL`)

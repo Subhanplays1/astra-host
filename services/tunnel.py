@@ -79,12 +79,35 @@ def _scan_url(text: str) -> Optional[str]:
     return None
 
 
+# ssh options must sit *before* the host, otherwise they become the remote command
+_SSH_OPTS = (
+    "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+    "-o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes"
+)
+
+
+def _harden_ssh(command: str) -> str:
+    """Make an ``ssh -R`` tunnel non-interactive so it can never hang startup.
+
+    A first connection would otherwise prompt for the host key and the panel
+    would sit there until the tunnel timeout.
+    """
+    parts = command.split(None, 1)
+    if not parts:
+        return command
+    binary = parts[0].rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if binary != "ssh" or "StrictHostKeyChecking" in command:
+        return command
+    rest = parts[1] if len(parts) > 1 else ""
+    return f"ssh {_SSH_OPTS} {rest}".rstrip()
+
+
 class CommandTunnel(TunnelProvider):
     """Runs a shell command and scrapes the first public URL it prints."""
 
     def __init__(self, name: str, command: str) -> None:
         self.name = name
-        self.command = command
+        self.command = _harden_ssh(command or "")
         self._proc: Optional[subprocess.Popen] = None
 
     def start(self, port: int, *, timeout: float = 30.0) -> TunnelResult:

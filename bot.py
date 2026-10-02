@@ -1852,6 +1852,7 @@ async def connect_vps_cmd(ctx: commands.Context, vps_id: str, token: Optional[st
         color=discord.Color.green(),
     )
     embed.add_field(name="Password", value=f"||{row['password_plain']}||", inline=False)
+    await defer_for_dm(ctx)
     try:
         await ctx.author.send(embed=embed)
         if ctx.interaction:
@@ -1915,6 +1916,7 @@ async def change_ssh_password_cmd(
         await ctx.send(f"❌ {exc}", ephemeral=True)
         return
     bot.db.update_vps_password(vps_id, password)
+    await defer_for_dm(ctx)
     try:
         await ctx.author.send(f"🔐 Password updated for `{vps_id}`:\n||{password}||")
         await ctx.send("Password updated and sent via DM.", ephemeral=True)
@@ -2700,6 +2702,7 @@ async def file_manager_cmd(ctx: commands.Context, vps_id: str) -> None:
     embed.add_field(name="Token", value=f"||`{info['token']}`||", inline=True)
     embed.add_field(name="Port", value=f"`{info['port']}` (localhost only)", inline=True)
     embed.set_footer(text="Free localhost.run URL · token required · dashboard 📁 Files")
+    await defer_for_dm(ctx)
     try:
         await ctx.author.send(embed=embed)
         await ctx.send("📁 File manager URL sent via DM.", ephemeral=True)
@@ -3228,6 +3231,21 @@ async def ensure_slash_admin_ctx(ctx: commands.Context) -> None:
         raise commands.MissingPermissions(["administrator"])
 
 
+async def defer_for_dm(ctx: commands.Context) -> None:
+    """Acknowledge a slash invocation *before* a slow DM.
+
+    Discord kills the interaction token ~3s after the command, and a DM round
+    trip can exceed that, which shows up as ``NotFound: Unknown interaction``.
+    """
+    inter = ctx.interaction
+    if inter is None or inter.response.is_done():
+        return
+    try:
+        await inter.response.defer(ephemeral=True)
+    except discord.HTTPException:
+        pass
+
+
 # ── admin: control center ───────────────────────────────────
 def _admin_system_panel() -> str:
     provider_ok = bool(bot.provider and bot.provider.ping())
@@ -3274,6 +3292,10 @@ class AdminControlView(discord.ui.View):
         if not url:
             await self._respond(interaction, "Admin Panel has no tunnel URL yet.")
             return
+        # Defer first — the interaction token dies ~3s after the click and a DM
+        # round trip can easily exceed that.
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
         # Never announce the URL publicly — DM it to the invoking admin only.
         try:
             await interaction.user.send(
@@ -3287,12 +3309,13 @@ class AdminControlView(discord.ui.View):
                     ),
                 )
             )
-            await self._respond(interaction, "🔗 Admin Panel link sent via DM.")
         except discord.HTTPException:
-            await self._respond(
-                interaction,
+            await interaction.followup.send(
                 "Could not DM you — enable DMs from server members and try again.",
+                ephemeral=True,
             )
+            return
+        await interaction.followup.send("🔗 Admin Panel link sent via DM.", ephemeral=True)
 
     @discord.ui.button(label="VPS", style=discord.ButtonStyle.secondary, row=0)
     async def vps_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -3446,6 +3469,7 @@ async def admin_cmd(ctx: commands.Context, action: Optional[str] = None) -> None
             ),
         )
         embed.set_footer(text="Codes are single-use and never shared publicly.")
+        await defer_for_dm(ctx)
         try:
             await ctx.author.send(embed=embed)
             if ctx.interaction:
@@ -3464,6 +3488,7 @@ async def admin_cmd(ctx: commands.Context, action: Optional[str] = None) -> None
         if not config.ADMIN_PANEL_ENABLED:
             await ctx.send("Admin Panel is disabled — set `ADMIN_PANEL_ENABLED=1`.", ephemeral=True)
             return
+        await defer_for_dm(ctx)
         try:
             await ctx.author.send(
                 f"🔗 Astra Host Admin Panel\n```\n{url or 'no tunnel URL'}\n```\n"
@@ -3736,6 +3761,7 @@ async def backup_data_cmd(ctx: commands.Context) -> None:
         return
     path = config.BASE_DIR / "astra_host_backup.json"
     path.write_text(payload, encoding="utf-8")
+    await defer_for_dm(ctx)
     try:
         await ctx.author.send(
             file=discord.File(str(path), filename="astra_host_backup.json")
