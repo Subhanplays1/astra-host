@@ -324,9 +324,15 @@ for path in ("/users", f"/users/{OWNER_ID}", "/plans", "/settings", "/export/use
 # static assets + security headers
 r = client.get("/static/app.js")
 assert r.status_code == 200 and b"data-filter-input" in r.get_data()
+r = client.get("/static/favicon.svg")
+assert r.status_code == 200 and b"<svg" in r.get_data(), "favicon missing"
 r = client.get("/login")
 for h in ("X-Frame-Options", "X-Content-Type-Options", "Content-Security-Policy"):
     assert h in r.headers, h
+csp = r.headers["Content-Security-Policy"]
+for directive in ("script-src 'self'", "connect-src 'self'", "img-src 'self' data:", "object-src 'none'"):
+    assert directive in csp, (directive, csp)
+assert "favicon.svg" in r.get_data(as_text=True), "favicon link missing from base template"
 
 db.close()
 print("ALL PANEL FEATURE CHECKS PASSED")

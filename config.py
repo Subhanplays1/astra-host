@@ -81,6 +81,10 @@ TUNNEL_CLOUDFLARE = os.getenv("TUNNEL_CLOUDFLARE", "").strip()
 TUNNEL_TAILSCALE = os.getenv("TUNNEL_TAILSCALE", "").strip()
 TUNNEL_CUSTOM_COMMAND = os.getenv("TUNNEL_CUSTOM_COMMAND", "").strip()
 TUNNEL_URL_PATTERN = os.getenv("TUNNEL_URL_PATTERN", "").strip()
+# ssh-only provider: free temporary https://<random>.pinggy.io (60 min per run)
+TUNNEL_PINGGY = os.getenv("TUNNEL_PINGGY", "").strip()
+# Download the cloudflared binary when it is missing (official GitHub release)
+TUNNEL_AUTO_INSTALL = _flag(os.getenv("TUNNEL_AUTO_INSTALL", ""), default=True)
 
 # ── Discord presence / Astra personality ──────────────────────
 PRESENCE_INTERVAL_MIN = _int_env("PRESENCE_INTERVAL_MIN", 15, 1)

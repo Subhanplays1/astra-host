@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 
+# downloaded tool binaries (cloudflared auto-install)
+.bin/
+
 # editors / os
 .idea/
 .vscode/

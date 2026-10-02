@@ -97,10 +97,21 @@ def _security_headers(response: Response) -> Response:
     response.headers.setdefault("Cache-Control", "no-store")
     if request.is_secure:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    # Explicit directives: browsers warn when everything falls back to
+    # default-src, and browser extensions then blame our policy for their own
+    # eval() attempts.
     response.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'",
     )
     return response
 

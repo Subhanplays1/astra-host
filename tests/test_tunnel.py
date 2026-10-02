@@ -17,6 +17,7 @@ os.environ.setdefault("DISCORD_TOKEN", "dummy-token-for-tests")
 _WORK = Path(tempfile.mkdtemp(prefix="astra-tunnel-"))
 os.environ["DATABASE_PATH"] = str(_WORK / "bot.db")
 os.environ["LOG_FILE"] = str(_WORK / "bot.log")
+os.environ["TUNNEL_AUTO_INSTALL"] = "0"  # tests must never download binaries
 
 from services.tunnel import (  # noqa: E402
     CommandTunnel,
@@ -138,5 +139,41 @@ lt = LocalhostRunTunnel()
 assert "nokey@localhost.run" in lt.command, lt.command
 assert "StrictHostKeyChecking=no" in lt.command
 print("provider command ok")
+
+# ── 9. provider registry: pinggy (ssh-only, no install) ──────
+from services.tunnel import get_tunnel_provider  # noqa: E402
+
+pinggy = get_tunnel_provider("pinggy")
+cmd = pinggy.command
+assert "free.pinggy.io" in cmd and "{port}" in cmd, cmd
+assert "-p 443" in cmd and "-R0:localhost:{port}" in cmd, cmd
+assert cmd.startswith("ssh "), cmd
+assert cmd.index("-o StrictHostKeyChecking=no") < cmd.index("free.pinggy.io"), cmd
+assert get_tunnel_provider("cloudflare").name == "cloudflare"
+assert get_tunnel_provider("").name == "local"
+
+# pinggy-style banner: https first, plain http ignored by the scanner
+fake_pinggy = CommandTunnel("pinggy", "echo URL: https://abc123.pinggy.io")
+r = fake_pinggy.start(8080, timeout=5)
+assert r.url == "https://abc123.pinggy.io", r.url
+fake_pinggy.stop()
+print("provider registry ok")
+
+# ── 10. cloudflared resolution never downloads while building ─
+from services.tunnel import cloudflared_bin  # noqa: E402
+
+cf = get_tunnel_provider("cloudflare")
+assert "cloudflared tunnel --url" in cf.command, cf.command
+assert "{port}" in cf.command
+assert cf.name == "cloudflare"
+# TUNNEL_AUTO_INSTALL=0 (set above) -> either a real binary or a clear error,
+# never a silent download during tests.
+try:
+    resolved = cloudflared_bin()
+    assert Path(resolved).exists(), resolved
+except TunnelError as exc:
+    assert "cloudflared" in str(exc), exc
+assert not (ROOT / ".bin").exists(), "tests must not download binaries"
+print("cloudflared resolution ok")
 
 print("TUNNEL CHECKS PASSED")

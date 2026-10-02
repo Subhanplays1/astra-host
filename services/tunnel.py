@@ -6,8 +6,10 @@ to the small ``TunnelProvider`` interface below.
 
 Supported values for ``TUNNEL_PROVIDER``:
 
+    cloudflare      free quick tunnel -> https://<random>.trycloudflare.com
+                    (downloads the official cloudflared binary when missing)
+    pinggy          ssh-only free tunnel -> https://<random>.pinggy.io (no install)
     localhost.run   free SSH reverse tunnel (no account required)
-    cloudflare      cloudflared quick tunnel (requires ``cloudflared`` binary)
     tailscale       tailscale serve (requires ``tailscale`` CLI + tailnet)
     custom          run ``TUNNEL_CUSTOM_COMMAND`` ({port} is substituted)
     "" / none       bind locally only — no public URL
@@ -156,6 +158,97 @@ def _asks_for_password(text: str) -> bool:
     return bool(text) and _PASSWORD_RE.search(text) is not None
 
 
+# ── cloudflared binary (free quick tunnels, no account) ──────
+def _cloudflared_asset() -> Optional[str]:
+    """Release filename for this machine, or None when unsupported."""
+    import platform as _platform
+
+    system = _platform.system().lower()
+    machine = _platform.machine().lower()
+    arches = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "armv7l": "arm",
+        "armv6l": "arm",
+        "i386": "386",
+        "i686": "386",
+    }
+    arch = arches.get(machine)
+    if arch is None:
+        return None
+    if system == "linux":
+        return f"cloudflared-linux-{arch}"
+    if system == "darwin":
+        return f"cloudflared-darwin-{arch}"
+    if system == "windows":
+        return f"cloudflared-windows-{arch}.exe"
+    return None
+
+
+def _binary_dir():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1] / ".bin"
+
+
+def cloudflared_bin(auto_install: Optional[bool] = None) -> str:
+    """Path to cloudflared: PATH hit, cached download, or a fresh download.
+
+    Raises TunnelError with actionable instructions when it cannot be obtained.
+    """
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    found = shutil.which("cloudflared")
+    if found:
+        return found
+
+    asset = _cloudflared_asset()
+    if asset is None:
+        raise TunnelError(
+            "cloudflared is not installed and no release exists for this "
+            "platform — install it manually or pick another TUNNEL_PROVIDER"
+        )
+
+    target = _binary_dir() / asset
+    if target.exists():
+        return str(target)
+
+    if auto_install is None:
+        try:
+            from config import TUNNEL_AUTO_INSTALL
+
+            auto_install = bool(TUNNEL_AUTO_INSTALL)
+        except Exception:  # noqa: BLE001
+            auto_install = True
+    if not auto_install:
+        raise TunnelError(
+            "cloudflared not found. Install it "
+            "(https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) "
+            "or set TUNNEL_AUTO_INSTALL=1"
+        )
+
+    url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/{asset}"
+    log.info("downloading cloudflared (%s)", url)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    part = target.with_suffix(target.suffix + ".part")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp, open(part, "wb") as fh:
+            shutil.copyfileobj(resp, fh)
+        os.chmod(part, 0o755)
+        part.replace(target)
+    except (urllib.error.URLError, OSError) as exc:
+        try:
+            part.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+        raise TunnelError(f"could not download cloudflared: {exc}") from exc
+    return str(target)
+
+
 class CommandTunnel(TunnelProvider):
     """Runs a shell command and scrapes the first public URL it prints."""
 
@@ -239,8 +332,10 @@ class CommandTunnel(TunnelProvider):
             hint = ""
             if asked_password:
                 hint = (
-                    " — ssh asked for a password; use the anonymous user "
-                    "(nokey@localhost.run) or configure a key in ~/.ssh/config"
+                    " — ssh asked for a password, which nobody can type into a "
+                    "background process. Generate a key (ssh-keygen) or use a "
+                    "provider that needs no credentials (nokey@localhost.run, "
+                    "TUNNEL_PROVIDER=cloudflare)"
                 )
             raise TunnelError(
                 f"{self.name}: no URL in output ({tail.strip()[:200]}){hint}"
@@ -260,13 +355,40 @@ class LocalhostRunTunnel(CommandTunnel):
 
 
 class CloudflareTunnel(CommandTunnel):
+    """Free quick tunnel — https://<random>.trycloudflare.com, no account."""
+
     def __init__(self) -> None:
         from config import TUNNEL_CLOUDFLARE
 
+        self._custom = bool(TUNNEL_CLOUDFLARE)
         super().__init__(
             "cloudflare",
             TUNNEL_CLOUDFLARE
             or "cloudflared tunnel --url http://127.0.0.1:{port} --no-autoupdate",
+        )
+
+    def start(self, port: int, *, timeout: float = 45.0) -> TunnelResult:
+        # Resolve (and download, once) the binary only when we actually tunnel,
+        # so building the provider never touches the network.
+        if not self._custom and self.command.split(None, 1)[0] == "cloudflared":
+            try:
+                binary = cloudflared_bin()
+            except TunnelError as exc:
+                raise TunnelError(f"{self.name}: {exc}") from exc
+            if binary != "cloudflared":
+                self.command = f'"{binary}"' + self.command[len("cloudflared"):]
+        return super().start(port, timeout=timeout)
+
+
+class PinggyTunnel(CommandTunnel):
+    """ssh-only free tunnel — https://<random>.pinggy.io, nothing to install."""
+
+    def __init__(self) -> None:
+        from config import TUNNEL_PINGGY
+
+        super().__init__(
+            "pinggy",
+            TUNNEL_PINGGY or "ssh -p 443 -R0:localhost:{port} free.pinggy.io -T",
         )
 
 
@@ -310,8 +432,10 @@ def get_tunnel_provider(name: Optional[str] = None) -> TunnelProvider:
         return LocalTunnel()
     if raw in {"localhost.run", "localhostrun", "localhostrun_ssh"}:
         return LocalhostRunTunnel()
-    if raw in {"cloudflare", "cloudflared"}:
+    if raw in {"cloudflare", "cloudflared", "trycloudflare"}:
         return CloudflareTunnel()
+    if raw in {"pinggy", "free.pinggy.io"}:
+        return PinggyTunnel()
     if raw in {"tailscale", "ts"}:
         return TailscaleTunnel()
     if raw in {"custom", "command"}:

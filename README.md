@@ -171,30 +171,47 @@ ADMIN_PANEL_PORT=8787
 ADMIN_PANEL_SESSION_HOURS=8
 ADMIN_PANEL_LOGIN_TTL=300     # one-time code lifetime (seconds)
 ADMIN_PANEL_RATE_LIMIT=10     # requests per window per IP
-TUNNEL_PROVIDER=local         # local | localhost.run | cloudflare | tailscale | custom
+TUNNEL_PROVIDER=local         # local | cloudflare | pinggy | localhost.run | tailscale | custom
 ```
 
-To expose it with **localhost.run** (free, no account) put the panel on `8080`:
+To expose it publicly, put the panel on `8080` and pick a provider:
+
+| Provider | URL | Notes |
+|----------|-----|-------|
+| **cloudflare** (recommended) | `https://<random>.trycloudflare.com` | free, no account, no install — the official `cloudflared` binary is fetched into `.bin/` when missing (`TUNNEL_AUTO_INSTALL=1`) |
+| **pinggy** | `https://<random>.pinggy.io` | ssh only, nothing to install; a fresh URL every 60 minutes |
+| **localhost.run** | `https://<random>.localhost.run` | ssh only, no account |
+| **tailscale** | your tailnet hostname | needs the `tailscale` CLI + an account |
+
+Recommended setup (Cloudflare quick tunnel):
 
 ```env
 ADMIN_PANEL_ENABLED=1
 ADMIN_PANEL_PORT=8080
-TUNNEL_PROVIDER=localhost.run
-TUNNEL_LOCALHOSTRUN=ssh -R 80:localhost:{port} nokey@localhost.run
+TUNNEL_PROVIDER=cloudflare
+TUNNEL_AUTO_INSTALL=1
+```
+
+ssh-only alternative with zero downloads:
+
+```env
+ADMIN_PANEL_ENABLED=1
+ADMIN_PANEL_PORT=8080
+TUNNEL_PROVIDER=pinggy
 ```
 
 `{port}` is substituted with `ADMIN_PANEL_PORT` at startup. ssh options for
 non-interactive use (`StrictHostKeyChecking`, keepalives, `ExitOnForwardFailure`)
 are appended automatically, so a first connection can never hang the bot.
 
-Two things are handled for you:
+Two things are handled for you on the ssh providers:
 
 - **Anonymous login** — if the destination is `localhost.run` without a user,
   `nokey@` is prepended. Without it ssh logs in as your local user (`root@`),
   the server asks for a password nobody can type into a background process, and
   no tunnel URL is ever printed. Put your own account (`you@localhost.run`) if
   you use a key.
-- **Banner filtering** — localhost.run greets you with its own console/docs
+- **Banner filtering** — ssh providers greet you with their own console/docs
   links (`https://admin.localhost.run/`, `https://localhost.run/docs/`); only a
   real tunnel URL (`https://<word>.localhost.run`) is handed to the panel, and a
   leftover banner URL stored in the DB is ignored.
