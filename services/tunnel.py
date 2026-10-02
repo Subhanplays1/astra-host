@@ -68,14 +68,45 @@ class TunnelProvider(ABC):
         pass
 
 
+def _url_host(url: str) -> str:
+    tail = url.split("//", 1)[-1]
+    return tail.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].lower()
+
+
+# localhost.run greets you with its own console/docs links before it prints the
+# tunnel URL. Without this list the panel ends up advertising admin.localhost.run.
+_NON_TUNNEL_HOSTS = {
+    "localhost.run",
+    "www.localhost.run",
+    "admin.localhost.run",
+    "docs.localhost.run",
+    "blog.localhost.run",
+    "ssh.localhost.run",
+    "api.localhost.run",
+    "app.localhost.run",
+    "status.localhost.run",
+    "lhr.life",
+    "lhrtunnel.link",
+    "lhr.rocks",
+    "lhr.link",
+    "developers.cloudflare.com",
+    "dash.cloudflare.com",
+    "github.com",
+    "tailscale.com",
+    "login.tailscale.com",
+}
+
+
+def is_tunnel_url(url: str) -> bool:
+    """True for a real tunnel URL, False for marketing/docs links in the banner."""
+    return bool(url) and _url_host(url) not in _NON_TUNNEL_HOSTS
+
+
 def _scan_url(text: str) -> Optional[str]:
     for match in URL_RE.findall(text or ""):
         url = match.rstrip(".,)")
-        # localhost.run prints its own help URLs first — keep the tunnel host
-        if "localhost.run" in url or "lhr.life" in url or "lhrtunnel" in url:
-            if url.rstrip("/") in {"https://localhost.run", "https://localhost.run/"}:
-                continue
-        return url
+        if is_tunnel_url(url):
+            return url
     return None
 
 
@@ -105,10 +136,18 @@ def _harden_ssh(command: str) -> str:
 class CommandTunnel(TunnelProvider):
     """Runs a shell command and scrapes the first public URL it prints."""
 
-    def __init__(self, name: str, command: str) -> None:
+    def __init__(self, name: str, command: str, *, filter_output: bool = True) -> None:
         self.name = name
         self.command = _harden_ssh(command or "")
+        self.filter_output = filter_output
         self._proc: Optional[subprocess.Popen] = None
+
+    def _candidate(self, line: str) -> Optional[str]:
+        if not self.filter_output:
+            # Static TUNNEL_URL_PATTERN — the operator chose this URL on purpose.
+            match = URL_RE.search(line or "")
+            return match.group(0).rstrip(".,)") if match else None
+        return _scan_url(line)
 
     def start(self, port: int, *, timeout: float = 30.0) -> TunnelResult:
         cmd = self.command.format(port=port)
@@ -138,7 +177,7 @@ class CommandTunnel(TunnelProvider):
                 for line in proc.stdout:
                     collected.append(line)
                     if result["url"] is None:
-                        found = _scan_url(line)
+                        found = self._candidate(line)
                         if found:
                             result["url"] = found
             except Exception:  # noqa: BLE001
@@ -155,6 +194,11 @@ class CommandTunnel(TunnelProvider):
             time.sleep(0.25)
 
         url = result["url"]
+        if not url:
+            # The command may have printed the URL and exited already — give the
+            # reader a moment to drain the pipe before declaring failure.
+            thread.join(timeout=1.0)
+            url = result["url"]
         if not url:
             tail = "".join(collected)[-400:]
             try:
@@ -204,10 +248,12 @@ class CustomTunnel(CommandTunnel):
 
         command = TUNNEL_CUSTOM_COMMAND
         url_pattern = TUNNEL_URL_PATTERN
+        filter_output = True
         if url_pattern and not command:
             # Static URL (e.g. a Tailscale/Cloudflare static address).
             command = f"echo {url_pattern} && sleep infinity"
-        super().__init__("custom", command)
+            filter_output = False
+        super().__init__("custom", command, filter_output=filter_output)
 
 
 class LocalTunnel(TunnelProvider):
@@ -254,9 +300,11 @@ class TunnelManager:
         if self.db is None:
             return ""
         try:
-            return str(self.db.get_setting("admin_tunnel_url", "") or "")
+            url = str(self.db.get_setting("admin_tunnel_url", "") or "")
         except Exception:  # noqa: BLE001
             return ""
+        # Drop a stale banner URL (admin.localhost.run) captured by an old build.
+        return url if is_tunnel_url(url) else ""
 
     def _store(self, url: str) -> None:
         if self.db is None:
