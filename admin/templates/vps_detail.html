@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ r.vps_id }}{% endblock %}
+{% block crumb %}Fleet / <a href="{{ url_for('vps_list') }}">Instances</a> / <span class="mono">{{ r.vps_id }}</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="mono">{{ r.vps_id }}</h1>
+    <p class="dim sub">
+      <span class="pill {{ 'ok' if r.status == 'running' else ('warn' if r.status == 'suspended' else '') }}" data-live="status">{{ r.status }}</span>
+      <span class="mono">{{ r.container_name }}</span> · owner
+      <a class="mono" href="{{ url_for('user_detail', user_id=r.owner_id) }}">{{ r.owner_id }}</a>
+      {% if owner.username %}<span class="dim">({{ owner.username }})</span>{% endif %}
+    </p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('vps_list') }}">← Instances</a>
+    <a class="btn ghost" href="{{ url_for('export', kind='vps', fmt='csv') }}">⤓ VPS CSV</a>
+  </div>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">CPU</span>
+    <strong data-live="cpu">{{ (live.cpu_percent ~ "%") if live else "—" }}</strong>
+    <span class="dim">live sample · refreshes every 15s</span>
+  </div>
+  <div class="card stat"><span class="label">Memory used</span>
+    <strong data-live="mem">{{ (live.mem_used_mb ~ " MB") if live else "—" }}</strong>
+    <span class="dim">of {{ r.memory_mb }} MB</span>
+  </div>
+  <div class="card stat"><span class="label">Storage</span>
+    <strong>{{ r.disk_gb }}</strong><span class="dim">GB disk</span>
+  </div>
+  <div class="card stat"><span class="label">vCPUs</span>
+    <strong>{{ r.cpus }}</strong><span class="dim">{{ r.os_image }}</span>
+  </div>
+</section>
+
+{% if live_error %}
+<section class="card warn-card">
+  <div class="card-head"><h2>Live metrics</h2></div>
+  <p class="dim">Live stats unavailable: {{ live_error }}</p>
+</section>
+{% endif %}
+
+<section class="grid two">
+  <div class="card">
+    <div class="card-head"><h2>Connection</h2>
+      <button class="btn tiny ghost" type="button"
+              data-copy="ssh -p {{ r.ssh_port or 22 }} {{ r.username or 'root' }}@{{ r.ip_address or 'HOST' }}">
+        Copy SSH command
+      </button>
+    </div>
+    <div class="kv"><span>IP address</span><span class="mono">{{ r.ip_address or "—" }}</span></div>
+    <div class="kv"><span>SSH port</span><span class="mono">{{ r.ssh_port or "—" }}</span></div>
+    <div class="kv"><span>User</span><span class="mono">{{ r.username or "root" }}</span></div>
+    <div class="kv"><span>Container</span><span class="mono">{{ r.container_name }}</span></div>
+    <div class="kv"><span>Container id</span><span class="mono">{{ r.container_id }}</span></div>
+    <div class="kv"><span>Live pid</span><span class="mono" data-live="pid">{{ live.pid if live else "—" }}</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Lifecycle</h2></div>
+    <div class="actions wrap">
+      {% for action, label, cls in (("start", "Start", ""), ("stop", "Stop", ""),
+                                    ("restart", "Restart", ""), ("suspend", "Suspend", ""),
+                                    ("unsuspend", "Resume", ""), ("emergency_stop", "Force stop", "danger")) %}
+      <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action=action) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn {{ cls }}" type="submit" data-confirm="Issue '{{ label }}' for {{ r.vps_id }}?">{{ label }}</button>
+      </form>
+      {% endfor %}
+    </div>
+
+    <div class="card-head spaced"><h2>Change SSH password</h2></div>
+    <form method="post" action="{{ url_for('vps_password', vps_id=r.vps_id) }}" class="row-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="password" name="password" minlength="8" required placeholder="new password (min 8 chars)">
+      <button class="btn" type="submit">Set password</button>
+    </form>
+
+    <div class="card-head spaced"><h2 class="danger-text">Danger zone</h2></div>
+    <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action='remove') }}" class="row-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="text" name="confirm" class="confirm-input" placeholder="type {{ r.vps_id }} to confirm"
+             pattern="{{ r.vps_id }}" title="Type {{ r.vps_id }} to confirm" required>
+      <button class="btn danger" type="submit">Delete instance</button>
+    </form>
+    <p class="hint">Deletion destroys the container and its data. There is no undo.</p>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="card">
+    <div class="card-head"><h2>Details</h2></div>
+    <div class="kv"><span>Created</span><span class="mono">{{ r.created_at or "—" }}</span></div>
+    <div class="kv"><span>Last seen</span><span class="mono">{{ r.last_seen or "—" }}</span></div>
+    {% if live and live.started_at %}
+    <div class="kv"><span>Container started</span><span class="mono">{{ live.started_at }}</span></div>
+    {% endif %}
+    <div class="kv"><span>Image</span><span class="mono">{{ r.os_image }}</span></div>
+    <div class="kv"><span>Branding</span><span class="mono">{{ r.brand_label or "—" }} (v{{ r.branding_version or 0 }})</span></div>
+    <div class="kv"><span>Owner status</span>
+      <span class="pill {{ 'bad' if owner.banned else ('ok' if owner.eligible else 'warn') }}">
+        {{ "BANNED" if owner.banned else ("ELIGIBLE" if owner.eligible else "NOT ELIGIBLE") }}
+      </span>
+    </div>
+    <div class="kv"><span>Owner invites</span><span class="mono">{{ owner.valid_invites }} valid · {{ owner.fake_invites }} fake</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Owner fleet</h2>
+      <a class="btn ghost tiny" href="{{ url_for('user_detail', user_id=r.owner_id) }}">Open user →</a>
+    </div>
+    {% if siblings %}
+    <table class="tight">
+      <thead><tr><th>Instance</th><th>Status</th><th>Spec</th></tr></thead>
+      <tbody>
+      {% for s in siblings %}
+        <tr>
+          <td><a class="mono" href="{{ url_for('vps_detail', vps_id=s.vps_id) }}">{{ s.vps_id }}</a></td>
+          <td><span class="pill {{ 'ok' if s.status == 'running' else '' }}">{{ s.status }}</span></td>
+          <td class="mono dim">{{ s.memory_mb }} MB · {{ s.cpus }}C · {{ s.disk_gb }} GB</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="dim">This is the owner's only instance.</p>{% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Deployment history</h2><span class="dim mono">{{ events|length }} events</span></div>
+  {% if events %}
+  <table class="tight">
+    <thead><tr><th>When</th><th>Stage</th><th>Status</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr>
+        <td class="mono">{{ e.created_at[:19] }}</td>
+        <td>{{ e.stage }}</td>
+        <td><span class="pill {{ 'ok' if e.status not in ('failed', 'error') else 'bad' }}">{{ e.status }}</span></td>
+        <td class="dim">{{ (e.message or "")[:220] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="dim">No events recorded for this instance.</p>{% endif %}
+</section>
+{% endblock %}

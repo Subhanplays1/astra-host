@@ -3,13 +3,18 @@
 {% block content %}
 <div class="login-wrap">
   <form class="card login" method="post" action="{{ url_for('login') }}" autocomplete="off">
-    <h1>{{ brand_name }}</h1>
-    <p class="dim">{{ brand_tagline }}</p>
+    <div class="login-brand">
+      <span class="logo-mark big">A</span>
+      <div>
+        <h1>{{ brand_name }}</h1>
+        <p class="dim">{{ brand_tagline }}</p>
+      </div>
+    </div>
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
     <label for="code">One-time code</label>
     <input id="code" name="code" type="text" inputmode="text" required
            maxlength="64" placeholder="Paste the code from /admin login" autofocus>
-    <button class="btn primary" type="submit">Sign in</button>
+    <button class="btn primary block" type="submit">Sign in</button>
     <p class="hint">
       Generate a fresh code with <code>/admin login</code> in Discord.
       Codes expire after a few minutes and can only be used once.

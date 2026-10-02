@@ -1,59 +1,75 @@
 {% extends "base.html" %}
 {% block title %}Instances{% endblock %}
+{% block crumb %}Fleet / Instances{% endblock %}
 {% block content %}
-<h1>Instances</h1>
+<div class="page-head">
+  <div>
+    <h1>Instances</h1>
+    <p class="dim sub">Every VPS on this node — lifecycle, owner and endpoint.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('export', kind='vps', fmt='csv') }}">⤓ CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='vps', fmt='json') }}">⤓ JSON</a>
+  </div>
+</div>
 
 <section class="grid cards">
-  <div class="card stat"><span class="label">Total</span><strong>{{ counts.total }}</strong></div>
-  <div class="card stat"><span class="label">Online</span><strong class="ok">{{ counts.online }}</strong></div>
-  <div class="card stat"><span class="label">Offline</span><strong>{{ counts.offline }}</strong></div>
-  <div class="card stat"><span class="label">Suspended</span><strong class="warn">{{ counts.suspended }}</strong></div>
+  <div class="card stat"><span class="label">Total</span><strong>{{ counts.total }}</strong><span class="dim">instances</span></div>
+  <div class="card stat"><span class="label">Online</span><strong class="ok">{{ counts.online }}</strong><span class="dim">running</span></div>
+  <div class="card stat"><span class="label">Offline</span><strong>{{ counts.offline }}</strong><span class="dim">stopped</span></div>
+  <div class="card stat"><span class="label">Suspended</span><strong class="warn">{{ counts.suspended }}</strong><span class="dim">held</span></div>
 </section>
 
 <section class="card">
-  <form method="get" action="{{ url_for('vps_list') }}" class="search">
-    <input type="search" name="q" value="{{ q }}" placeholder="Filter by id, name, owner or status">
-    <button class="btn ghost" type="submit">Filter</button>
-  </form>
+  <div class="toolbar">
+    <form method="get" action="{{ url_for('vps_list') }}" class="search">
+      <input type="search" name="q" value="{{ q }}" placeholder="Filter by id, name, owner or status" data-filter-input>
+      <button class="btn ghost" type="submit">Filter</button>
+      {% if q %}<a class="btn ghost" href="{{ url_for('vps_list') }}">Clear</a>{% endif %}
+    </form>
+    <span class="dim mono">{{ rows|length }} shown</span>
+  </div>
 
-  <table>
+  <div class="table-wrap">
+  <table data-filter-table>
     <thead>
       <tr>
-        <th>Instance</th><th>Owner</th><th>Status</th><th>Spec</th><th>Node</th><th>Actions</th>
+        <th>Instance</th><th>Owner</th><th>Status</th><th>Spec</th><th>Endpoint</th><th>Created</th><th>Actions</th>
       </tr>
     </thead>
     <tbody>
     {% for r in rows %}
       <tr>
         <td>
-          <span class="mono strong">{{ r.vps_id }}</span><br>
+          <a class="mono strong" href="{{ url_for('vps_detail', vps_id=r.vps_id) }}">{{ r.vps_id }}</a><br>
           <span class="dim mono">{{ r.container_name }}</span>
         </td>
-        <td class="mono">{{ r.owner_id }}</td>
+        <td>
+          <a class="mono" href="{{ url_for('user_detail', user_id=r.owner_id) }}" title="Open user">{{ r.owner_id }}</a>
+        </td>
         <td><span class="pill {{ 'ok' if r.status == 'running' else ('warn' if r.status == 'suspended' else '') }}">{{ r.status }}</span></td>
         <td class="mono">{{ r.memory_mb }} MB · {{ r.cpus }}C · {{ r.disk_gb }} GB<br><span class="dim">{{ r.os_image }}</span></td>
-        <td class="mono">{{ r.ip_address or "—" }}{% if r.ssh_port %}<br><span class="dim">ssh {{ r.ssh_port }}</span>{% endif %}</td>
+        <td class="mono">
+          {% if r.ip_address %}{{ r.ip_address }}{% else %}—{% endif %}
+          {% if r.ssh_port %}<br><span class="dim">ssh :{{ r.ssh_port }}</span>{% endif %}
+        </td>
+        <td class="mono dim">{{ (r.created_at or "")[:10] }}</td>
         <td class="actions">
+          <a class="btn tiny" href="{{ url_for('vps_detail', vps_id=r.vps_id) }}">Open</a>
           {% for action, label in (("start", "Start"), ("stop", "Stop"), ("restart", "Restart"),
-                                   ("suspend", "Suspend"), ("unsuspend", "Resume"),
-                                   ("emergency_stop", "Force stop")) %}
+                                   ("suspend", "Suspend"), ("unsuspend", "Resume")) %}
           <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action=action) }}" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn tiny" type="submit">{{ label }}</button>
           </form>
           {% endfor %}
-          <form method="post" action="{{ url_for('vps_action', vps_id=r.vps_id, action='remove') }}" class="inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="text" name="confirm" class="confirm-input" placeholder="type id to confirm"
-                   pattern="{{ r.vps_id }}" title="Type {{ r.vps_id }} to confirm" required>
-            <button class="btn tiny danger" type="submit">Delete</button>
-          </form>
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="dim">No instances{% if q %} match “{{ q }}”{% endif %}.</td></tr>
+      <tr><td colspan="7" class="dim">No instances{% if q %} match “{{ q }}”{% endif %}.</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endblock %}

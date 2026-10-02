@@ -1,39 +1,90 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block crumb %}Dashboard{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="dim sub">Live fleet, node health and platform controls.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('users_list') }}">Users</a>
+    <a class="btn ghost" href="{{ url_for('vps_list') }}">Instances</a>
+    <a class="btn" href="{{ url_for('export', kind='users', fmt='csv') }}">⤓ Users CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='vps', fmt='csv') }}">⤓ VPS CSV</a>
+    <a class="btn primary" href="{{ url_for('settings_page') }}">Settings</a>
+  </div>
+</div>
 
 <section class="grid cards">
   <div class="card stat">
     <span class="label">Instances</span>
     <strong>{{ stats.vps.total }}</strong>
-    <span class="dim">managed</span>
-  </div>
-  <div class="card stat">
-    <span class="label">Online</span>
-    <strong class="ok">{{ stats.vps.online }}</strong>
-    <span class="dim">running</span>
-  </div>
-  <div class="card stat">
-    <span class="label">Offline</span>
-    <strong>{{ stats.vps.offline }}</strong>
-    <span class="dim">stopped</span>
+    <span class="dim">{{ stats.vps.online }} running · {{ stats.vps.offline }} stopped</span>
   </div>
   <div class="card stat">
     <span class="label">Suspended</span>
     <strong class="warn">{{ stats.vps.suspended }}</strong>
-    <span class="dim">held</span>
+    <span class="dim">{{ stats.vps.other }} other state</span>
   </div>
   <div class="card stat">
     <span class="label">Users</span>
     <strong>{{ stats.users }}</strong>
-    <span class="dim">tracked</span>
+    <span class="dim">tracked in the fleet</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Banned</span>
+    <strong class="{{ 'bad' if stats.counts.banned else '' }}">{{ stats.counts.banned }}</strong>
+    <span class="dim">blocked from provisioning</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Required invites</span>
+    <strong>{{ stats.settings.required_invites }}</strong>
+    <span class="dim">to unlock a VPS</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Provisioning</span>
+    <strong class="{{ 'ok' if stats.settings.vps_enabled == '1' else 'bad' }}">
+      {{ "ON" if stats.settings.vps_enabled == "1" else "OFF" }}
+    </strong>
+    <span class="dim">{{ "maintenance" if maintenance_mode else "accepting deploys" }}</span>
   </div>
 </section>
 
 <section class="grid two">
   <div class="card">
-    <h2>Node</h2>
+    <div class="card-head">
+      <h2>Deployments · last 14 days</h2>
+      <span class="dim mono">
+        {% if stats.series %}{{ stats.series[-1].total }} today{% else %}no data{% endif %}
+      </span>
+    </div>
+    {% if stats.series %}
+    {% set maxv = stats.series | map(attribute="total") | max %}
+    {% set maxv = maxv if maxv > 0 else 1 %}
+    <div class="bars">
+      {% for p in stats.series %}
+      <div class="bar {{ 'bad' if p.failed > 0 else '' }}" title="{{ p.day }} · {{ p.total }} deploy(s) · {{ p.failed }} failed">
+        <span style="height: {{ [(p.total / maxv * 100) | round | int, 3] | max }}%"></span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="axis dim mono">
+      <span>{{ stats.series[0].day }}</span>
+      <span>{{ stats.series[-1].day }}</span>
+    </div>
+    {% else %}
+    <p class="dim">No deployments recorded yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Node</h2>
+      <span class="pill {{ 'ok' if stats.provider.connected else 'bad' }}">
+        {{ "CONNECTED" if stats.provider.connected else "OFFLINE" }}
+      </span>
+    </div>
     {% set host = stats.host %}
     {% macro bar(label, value) %}
       <div class="meter">
@@ -45,8 +96,7 @@
     {{ bar("CPU", host.cpu_percent) }}
     {{ bar("Memory", host.memory_percent) }}
     {{ bar("Storage", host.disk_percent) }}
-    <div class="kv">
-      <span>Uptime</span>
+    <div class="kv"><span>Uptime</span>
       <span class="mono">{{ (host.uptime_seconds or 0) // 86400 }}d {{ ((host.uptime_seconds or 0) % 86400) // 3600 }}h</span>
     </div>
     {% if host.memory_total_gb %}
@@ -55,37 +105,53 @@
     {% if host.disk_total_gb %}
     <div class="kv"><span>Storage</span><span class="mono">{{ host.disk_used_gb }} / {{ host.disk_total_gb }} GB</span></div>
     {% endif %}
+    {% if host.load_avg %}
+    <div class="kv"><span>Load avg</span><span class="mono">{{ host.load_avg | join(" · ") }}</span></div>
+    {% endif %}
   </div>
+</section>
 
+<section class="grid two">
   <div class="card">
-    <h2>Platform</h2>
+    <div class="card-head"><h2>Platform</h2>
+      {% if stats.astra %}<span class="pill">{{ stats.astra.state }}</span>{% endif %}
+    </div>
     <div class="kv"><span>LXD / Incus</span>
       <span class="pill {{ 'ok' if stats.provider.connected else 'bad' }}">
         {{ "CONNECTED" if stats.provider.connected else "OFFLINE" }}
       </span>
     </div>
     <div class="kv"><span>Managed containers</span><span class="mono">{{ stats.provider.managed }}</span></div>
-    <div class="kv"><span>Provisioning</span>
-      <span class="pill {{ 'ok' if stats.settings.vps_enabled == '1' else 'bad' }}">
-        {{ "ENABLED" if stats.settings.vps_enabled == "1" else "DISABLED" }}
+    <div class="kv"><span>Limits</span><span class="mono">{{ stats.settings.max_vps_per_user }} / user · {{ stats.settings.max_total_vps }} total</span></div>
+    <div class="kv"><span>Admin tunnel</span>
+      <span class="mono">{{ stats.panel.url or ("local · " ~ stats.panel.tunnel) }}</span>
+    </div>
+    {% if stats.astra %}<div class="astra"><p>{{ stats.astra.message }}</p></div>{% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Runtime</h2>
+      <span class="pill {{ 'ok' if stats.runtime.ready else 'warn' }}">
+        {{ "DISCORD OK" if stats.runtime.ready else "CONNECTING" }}
       </span>
     </div>
-    <div class="kv"><span>Required invites</span><span class="mono">{{ stats.settings.required_invites }}</span></div>
-    <div class="kv"><span>Limits</span><span class="mono">{{ stats.settings.max_vps_per_user }} / user · {{ stats.settings.max_total_vps }} total</span></div>
-    {% if stats.astra %}
-    <div class="astra">
-      <span class="pill">{{ stats.astra.state }}</span>
-      <p>{{ stats.astra.message }}</p>
-    </div>
-    {% endif %}
-    {% if stats.panel.url %}
-    <div class="kv"><span>Panel URL</span><span class="mono">{{ stats.panel.url }}</span></div>
-    {% endif %}
+    <div class="kv"><span>Bot uptime</span><span class="mono">
+      {%- if stats.runtime.uptime_seconds -%}
+        {{ (stats.runtime.uptime_seconds // 3600) }}h {{ ((stats.runtime.uptime_seconds % 3600) // 60) }}m
+      {%- else -%}—{%- endif -%}
+    </span></div>
+    <div class="kv"><span>Guilds</span><span class="mono">{{ stats.runtime.guilds }}</span></div>
+    <div class="kv"><span>Python</span><span class="mono">{{ stats.runtime.python }}</span></div>
+    <div class="kv"><span>Process</span><span class="mono">pid {{ stats.runtime.pid }}</span></div>
+    <div class="kv"><span>Panel session</span><span class="mono">{{ stats.panel.session_hours }}h</span></div>
   </div>
 </section>
 
 <section class="card">
-  <h2>Settings</h2>
+  <div class="card-head">
+    <h2>Settings</h2>
+    <a class="btn ghost tiny" href="{{ url_for('settings_page') }}">Open full settings →</a>
+  </div>
   <form method="post" action="{{ url_for('settings') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="grid two">
@@ -107,30 +173,55 @@
 
 <section class="grid two">
   <div class="card">
-    <h2>Recent deployments</h2>
+    <div class="card-head">
+      <h2>Recent deployments</h2>
+      <a class="btn ghost tiny" href="{{ url_for('logs') }}">All events →</a>
+    </div>
     {% if stats.activity.deployments %}
-    <ul class="list">
+    <table class="tight">
+      <thead><tr><th>When</th><th>Instance</th><th>Stage</th><th>Status</th></tr></thead>
+      <tbody>
       {% for d in stats.activity.deployments %}
-      <li><span class="mono">{{ d.created_at[:19] }}</span> · <span class="mono">{{ d.vps_id }}</span> · {{ d.stage }} · {{ d.status }}</li>
+        <tr>
+          <td class="mono">{{ d.created_at[:19] }}</td>
+          <td class="mono">{{ d.vps_id }}</td>
+          <td>{{ d.stage }}</td>
+          <td><span class="pill {{ 'bad' if d.status in ('failed', 'error') else 'ok' }}">{{ d.status }}</span></td>
+        </tr>
       {% endfor %}
-    </ul>
+      </tbody>
+    </table>
     {% else %}<p class="dim">No deployments yet.</p>{% endif %}
   </div>
+
   <div class="card">
-    <h2>Recent admin actions</h2>
+    <div class="card-head">
+      <h2>Recent admin actions</h2>
+      <a class="btn ghost tiny" href="{{ url_for('logs') }}">Audit →</a>
+    </div>
     {% if stats.activity.admin_actions %}
-    <ul class="list">
+    <table class="tight">
+      <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Result</th></tr></thead>
+      <tbody>
       {% for a in stats.activity.admin_actions %}
-      <li><span class="mono">{{ a.created_at[:19] }}</span> · <span class="mono">{{ a.admin_id }}</span> · {{ a.action }} · {{ a.result }}</li>
+        <tr>
+          <td class="mono">{{ a.created_at[:19] }}</td>
+          <td class="mono">{{ a.admin_id }}</td>
+          <td>{{ a.action }}</td>
+          <td><span class="pill {{ 'ok' if a.result == 'ok' else 'bad' }}">{{ a.result }}</span></td>
+        </tr>
       {% endfor %}
-    </ul>
+      </tbody>
+    </table>
     {% else %}<p class="dim">No admin actions recorded.</p>{% endif %}
   </div>
 </section>
 
 {% if stats.activity.errors %}
-<section class="card bad">
-  <h2>Failures</h2>
+<section class="card danger">
+  <div class="card-head"><h2>Failures</h2>
+    <a class="btn ghost tiny" href="{{ url_for('logs') }}">Open audit →</a>
+  </div>
   <ul class="list">
     {% for e in stats.activity.errors %}
     <li><span class="mono">{{ e.created_at[:19] }}</span> · <span class="mono">{{ e.vps_id or "—" }}</span> · {{ e.stage }} · {{ e.message }}</li>

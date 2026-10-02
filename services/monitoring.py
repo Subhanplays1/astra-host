@@ -144,9 +144,16 @@ def dashboard_stats(db, provider=None, *, astra=None) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             log.debug("astra report failed: %s", exc)
 
+    series: list[dict[str, Any]] = []
+    try:
+        series = db.deployment_series(14)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("deployment series failed: %s", exc)
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "users": users,
+        "series": series,
         "vps": {
             "total": total,
             "online": online,

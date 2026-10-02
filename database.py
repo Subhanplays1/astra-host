@@ -6,7 +6,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1445,6 +1445,144 @@ class Database:
         invitees = int(row["n"]) if row else 0
         return max(owners, invitees)
 
+    def list_user_reports(self) -> list[dict[str, Any]]:
+        """Every known user (invite row and/or VPS owner) with fleet + invite data.
+
+        One flat row per Discord id so the admin panel can render, filter and
+        export the full user base without N+1 queries.
+        """
+        users: dict[str, dict[str, Any]] = {}
+
+        def blank(user_id: str) -> dict[str, Any]:
+            return {
+                "user_id": user_id,
+                "valid_invites": 0,
+                "fake_invites": 0,
+                "eligible": 0,
+                "completion_notified": 0,
+                "invites_updated_at": "",
+                "vps_total": 0,
+                "vps_running": 0,
+                "vps_suspended": 0,
+                "first_vps_at": "",
+                "last_seen": "",
+                "banned": 0,
+                "banned_at": "",
+                "banned_by": "",
+                "is_admin": 0,
+            }
+
+        for row in self._fetch(
+            """
+            SELECT user_id, valid_invites, fake_invites, eligible,
+                   completion_notified, updated_at
+            FROM user_invites
+            """
+        ):
+            entry = blank(str(row["user_id"]))
+            entry.update(
+                valid_invites=int(row["valid_invites"] or 0),
+                fake_invites=int(row["fake_invites"] or 0),
+                eligible=int(row["eligible"] or 0),
+                completion_notified=int(row["completion_notified"] or 0),
+                invites_updated_at=str(row["updated_at"] or ""),
+            )
+            users[entry["user_id"]] = entry
+
+        for row in self._fetch(
+            """
+            SELECT owner_id AS user_id,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN status = 'running'  THEN 1 ELSE 0 END) AS running,
+                   SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) AS suspended,
+                   MIN(created_at) AS first_at,
+                   MAX(COALESCE(last_seen, created_at)) AS last_seen
+            FROM vps_instances
+            GROUP BY owner_id
+            """
+        ):
+            uid = str(row["user_id"])
+            entry = users.setdefault(uid, blank(uid))
+            entry.update(
+                vps_total=int(row["total"] or 0),
+                vps_running=int(row["running"] or 0),
+                vps_suspended=int(row["suspended"] or 0),
+                first_vps_at=str(row["first_at"] or ""),
+                last_seen=str(row["last_seen"] or ""),
+            )
+
+        for row in self._fetch("SELECT user_id, banned_at, banned_by FROM banned_users"):
+            uid = str(row["user_id"])
+            entry = users.setdefault(uid, blank(uid))
+            entry.update(
+                banned=1,
+                banned_at=str(row["banned_at"] or ""),
+                banned_by=str(row["banned_by"] or ""),
+            )
+
+        try:
+            admins = {str(x) for x in self.list_admins()}
+        except Exception:  # noqa: BLE001
+            admins = set()
+        for uid in users:
+            if uid in admins:
+                users[uid]["is_admin"] = 1
+
+        return sorted(
+            users.values(),
+            key=lambda e: (-e["vps_total"], -e["valid_invites"], e["user_id"]),
+        )
+
+    def get_user_report(self, user_id: str) -> dict[str, Any] | None:
+        uid = str(user_id)
+        for entry in self.list_user_reports():
+            if entry["user_id"] == uid:
+                return entry
+        return None
+
+    def deployment_logs_for(self, owner_id: str, limit: int = 50) -> list[sqlite3.Row]:
+        return self._fetch(
+            "SELECT * FROM deployment_logs WHERE owner_id = ? ORDER BY id DESC LIMIT ?",
+            (str(owner_id), int(limit)),
+        )
+
+    def deployment_logs_for_vps(self, vps_id: str, limit: int = 50) -> list[sqlite3.Row]:
+        return self._fetch(
+            "SELECT * FROM deployment_logs WHERE vps_id = ? ORDER BY id DESC LIMIT ?",
+            (str(vps_id), int(limit)),
+        )
+
+    def deployment_series(self, days: int = 14) -> list[dict[str, Any]]:
+        """Deploys per day (UTC) for the dashboard chart — gaps included."""
+        days = max(1, min(days, 90))
+        today = datetime.now(timezone.utc).date()
+        since = (today - timedelta(days=days - 1)).isoformat()
+        counts: dict[str, dict[str, int]] = {}
+        try:
+            for row in self._fetch(
+                """
+                SELECT substr(created_at, 1, 10) AS day,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed
+                FROM deployment_logs
+                WHERE substr(created_at, 1, 10) >= ? AND stage = 'create'
+                GROUP BY day
+                """,
+                (since,),
+            ):
+                counts[str(row["day"])] = {
+                    "total": int(row["total"] or 0),
+                    "failed": int(row["failed"] or 0),
+                }
+        except Exception:  # noqa: BLE001
+            return []
+        out: list[dict[str, Any]] = []
+        for offset in range(days - 1, -1, -1):
+            day = (today - timedelta(days=offset)).isoformat()
+            bucket = counts.get(day, {"total": 0, "failed": 0})
+            out.append({"day": day, **bucket})
+        return out
+
     def export_backup(self) -> dict[str, Any]:
         tables = [
             "system_settings",
@@ -1458,6 +1596,7 @@ class Database:
             "admin_users",
             "plans",
             "trust_reports",
+            "admin_activity",
         ]
         data: dict[str, Any] = {}
         for table in tables:

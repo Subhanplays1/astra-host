@@ -207,11 +207,32 @@ Two things are handled for you:
 
 **Pages**
 
-| Page | Contents |
-|------|----------|
-| Dashboard | instance/user counts, node CPU/memory/storage, provider health, Astra status, settings, recent activity |
-| Instances | searchable table + start / stop / restart / suspend / resume / force stop / delete (delete requires typing the id) |
-| Audit | every admin action (`admin_activity`) + deployment events, with result and source (`discord` / `panel`) |
+| Page | Route | Contents |
+|------|-------|----------|
+| Dashboard | `/` | stat cards, 14-day deploy chart, node CPU/memory/storage, runtime (Discord/Python/uptime), quick settings, recent activity |
+| Instances | `/vps` | searchable table with status pills, per-row lifecycle actions, CSV/JSON export |
+| Instance | `/vps/<id>` | live CPU/memory (auto-refresh), copyable SSH command, lifecycle + password change, owner fleet, deployment history, typed-confirmation delete |
+| Users | `/users` | every tracked user with invites, eligibility and instance counts; tabs (with VPS / eligible / no VPS / banned / admins); search; ban/unban; CSV/JSON export |
+| User | `/users/<id>` | invite editor, ban state, their instances, deployment activity |
+| Plans | `/plans` | create / edit / enable / disable / delete deployment templates |
+| Settings | `/settings` | maintenance mode, provisioning toggle, invite goal, per-user and total caps, panel access details, data exports |
+| Audit | `/logs` | admin actions + deployment events with instant filtering, CSV/JSON export |
+
+**Exports**
+
+`GET /export/<kind>.<csv|json>` — login-protected, rate-limited and written to the audit
+log (`export_users`, `export_vps`, …). Credentials are always stripped:
+
+| `kind` | Data |
+|--------|------|
+| `users` | every tracked user: invites, eligibility, instance counts, ban state |
+| `vps` | all instances with specs and endpoints (no passwords) |
+| `plans` | deployment templates |
+| `audit` | `admin_activity` |
+| `deployments` | `deployment_logs` |
+| `backup` | full table dump, **JSON only**, minus stored instance passwords |
+
+Discord `/backup_data` still produces a byte-perfect restore copy.
 
 **Security**
 

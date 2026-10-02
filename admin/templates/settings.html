@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block crumb %}Operations / Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="dim sub">Platform controls, access policy and data exports.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('index') }}">← Dashboard</a>
+  </div>
+</div>
+
+<section class="grid two">
+  <div class="card">
+    <div class="card-head"><h2>Platform</h2></div>
+    <form method="post" action="{{ url_for('settings') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="grid two">
+        <label class="check">
+          <input type="checkbox" name="maintenance_mode" {% if stats.settings.maintenance_mode == "1" %}checked{% endif %}>
+          Maintenance mode (block new deployments)
+        </label>
+        <label class="check">
+          <input type="checkbox" name="vps_enabled" {% if stats.settings.vps_enabled == "1" %}checked{% endif %}>
+          Allow new VPS deployments
+        </label>
+      </div>
+      <div class="grid two">
+        <label>Required invites
+          <input type="number" name="required_invites" min="0" max="1000" value="{{ stats.settings.required_invites }}">
+        </label>
+        <label>Max VPS per user
+          <input type="number" name="max_vps_per_user" min="1" max="100" value="{{ stats.settings.max_vps_per_user }}">
+        </label>
+        <label>Max total VPS
+          <input type="number" name="max_total_vps" min="1" max="10000" value="{{ stats.settings.max_total_vps }}">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Save settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Panel access</h2>
+      <span class="pill {{ 'ok' if stats.panel.enabled else 'warn' }}">
+        {{ "ENABLED" if stats.panel.enabled else "DISABLED" }}
+      </span>
+    </div>
+    <div class="kv"><span>Bind</span><span class="mono">{{ stats.panel.host }}:{{ stats.panel.port }}</span></div>
+    <div class="kv"><span>Public URL</span><span class="mono">{{ stats.panel.url or "loopback only" }}</span></div>
+    <div class="kv"><span>Tunnel provider</span><span class="mono">{{ stats.panel.tunnel }}</span></div>
+    <div class="kv"><span>Session lifetime</span><span class="mono">{{ stats.panel.session_hours }}h</span></div>
+    <div class="kv"><span>Login code TTL</span><span class="mono">{{ stats.panel.login_ttl }}s</span></div>
+    <div class="kv"><span>Rate limit</span><span class="mono">{{ stats.panel.rate_limit }} req / 5 min / IP</span></div>
+    <div class="kv"><span>Debug mode</span><span class="mono">{{ "on" if stats.panel.debug else "off" }}</span></div>
+    <p class="hint">The URL is only ever delivered by DM from <code>/admin panel</code> — never post it publicly.</p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Data exports</h2>
+    <span class="dim">credentials are always stripped</span>
+  </div>
+  <div class="grid exports">
+    {% for kind, label, note in (
+        ("users", "Users", "invites, eligibility, instance counts"),
+        ("vps", "Instances", "every VPS with specs and endpoints"),
+        ("plans", "Plans", "deployment templates"),
+        ("audit", "Audit log", "admin actions from Discord and the panel"),
+        ("deployments", "Deployments", "stage/status history"),
+        ("backup", "Full backup", "all tables as one JSON document")) %}
+    <div class="export-row">
+      <div>
+        <b>{{ label }}</b>
+        <span class="dim">{{ note }}</span>
+      </div>
+      <div class="actions">
+        {% if kind != "backup" %}
+        <a class="btn tiny" href="{{ url_for('export', kind=kind, fmt='csv') }}">CSV</a>
+        {% endif %}
+        <a class="btn tiny" href="{{ url_for('export', kind=kind, fmt='json') }}">JSON</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Danger zone</h2></div>
+  <div class="actions wrap">
+    <a class="btn danger" href="{{ url_for('export', kind='backup', fmt='json') }}"
+       data-confirm="Download a full database backup now?">⤓ Download full backup</a>
+  </div>
+  <p class="hint">Take a backup before importing schema changes or wiping invite data.
+    Panel downloads omit stored instance passwords — use Discord <code>/backup_data</code>
+    when you need a byte-perfect restore.</p>
+</section>
+{% endblock %}

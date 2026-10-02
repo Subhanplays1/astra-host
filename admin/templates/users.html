@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block crumb %}Fleet / Users{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Users</h1>
+    <p class="dim sub">Everyone tracked by the fleet — invites, eligibility and instances.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('export', kind='users', fmt='csv') }}">⤓ CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='users', fmt='json') }}">⤓ JSON</a>
+  </div>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Users</span><strong>{{ counts.total }}</strong><span class="dim">tracked</span></div>
+  <div class="card stat"><span class="label">With a VPS</span><strong class="ok">{{ counts.with_vps }}</strong><span class="dim">deployed</span></div>
+  <div class="card stat"><span class="label">Eligible</span><strong>{{ counts.eligible }}</strong><span class="dim">met invite goal</span></div>
+  <div class="card stat"><span class="label">Banned</span><strong class="{{ 'bad' if counts.banned else '' }}">{{ counts.banned }}</strong><span class="dim">blocked</span></div>
+  <div class="card stat"><span class="label">Invites</span><strong>{{ counts.invites }}</strong><span class="dim">valid, all users</span></div>
+  <div class="card stat"><span class="label">Goal</span><strong>{{ needs_invites }}</strong><span class="dim">invites required</span></div>
+</section>
+
+<section class="card">
+  <div class="toolbar">
+    <form method="get" action="{{ url_for('users_list') }}" class="search">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search Discord id or username" data-filter-input>
+      <input type="hidden" name="f" value="{{ f }}">
+      <button class="btn ghost" type="submit">Search</button>
+      {% if q %}<a class="btn ghost" href="{{ url_for('users_list', f=f) }}">Clear</a>{% endif %}
+    </form>
+    <span class="dim mono">{{ shown }} / {{ total }} shown</span>
+  </div>
+
+  <div class="tabs">
+    {% for key, label in (("all", "All"), ("with_vps", "With VPS"), ("eligible", "Eligible"),
+                          ("empty", "No VPS"), ("banned", "Banned"), ("admins", "Admins")) %}
+      <a class="tab {{ 'on' if f == key }}" href="{{ url_for('users_list', f=key, q=q) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="table-wrap">
+  <table data-filter-table>
+    <thead>
+      <tr>
+        <th>User</th><th>Invites</th><th>Eligibility</th><th>Instances</th>
+        <th>First seen</th><th>Last activity</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in rows %}
+      <tr>
+        <td>
+          <a class="mono strong" href="{{ url_for('user_detail', user_id=u.user_id) }}">{{ u.user_id }}</a>
+          {% if u.username %}<br><span class="dim">{{ u.username }}</span>{% endif %}
+          {% if u.is_admin %}<br><span class="pill">ADMIN</span>{% endif %}
+        </td>
+        <td class="mono">{{ u.valid_invites }} valid{% if u.fake_invites %}<br><span class="dim bad">{{ u.fake_invites }} fake</span>{% endif %}</td>
+        <td>
+          {% if u.eligible %}
+            <span class="pill ok">ELIGIBLE</span>
+          {% else %}
+            <span class="pill">{{ u.valid_invites }}/{{ needs_invites }}</span>
+          {% endif %}
+        </td>
+        <td class="mono">
+          {{ u.vps_total }}
+          {% if u.vps_running %}<br><span class="dim ok">{{ u.vps_running }} running</span>{% endif %}
+          {% if u.vps_suspended %}<br><span class="dim warn">{{ u.vps_suspended }} held</span>{% endif %}
+        </td>
+        <td class="mono dim">{{ (u.first_vps_at or u.invites_updated_at or "")[:10] or "—" }}</td>
+        <td class="mono dim">{{ (u.last_seen or u.invites_updated_at or "")[:19] or "—" }}</td>
+        <td>
+          {% if u.banned %}<span class="pill bad">BANNED</span>
+          {% else %}<span class="pill ok">ACTIVE</span>{% endif %}
+        </td>
+        <td class="actions">
+          <a class="btn tiny" href="{{ url_for('user_detail', user_id=u.user_id) }}">Open</a>
+          <form method="post" action="{{ url_for('user_action', user_id=u.user_id, action=('unban' if u.banned else 'ban')) }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn tiny {{ 'danger' if not u.banned else '' }}" type="submit"
+                    data-confirm="{{ 'Unban' if u.banned else 'Ban' }} {{ u.user_id }}?">
+              {{ "Unban" if u.banned else "Ban" }}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="dim">No users{% if q %} match “{{ q }}”{% endif %}.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if total > shown %}
+  <p class="hint">Showing the first {{ shown }} of {{ total }} users — narrow it with search, or download the full set as
+    <a href="{{ url_for('export', kind='users', fmt='csv') }}">CSV</a> /
+    <a href="{{ url_for('export', kind='users', fmt='json') }}">JSON</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

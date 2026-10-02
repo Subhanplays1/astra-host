@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}User {{ u.user_id }}{% endblock %}
+{% block crumb %}Fleet / <a href="{{ url_for('users_list') }}">Users</a> / <span class="mono">{{ u.user_id }}</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="mono">{{ u.user_id }}</h1>
+    <p class="dim sub">
+      {% if u.username %}{{ u.username }} · {% endif %}
+      {% if u.banned %}<span class="pill bad">BANNED</span>{% endif %}
+      {% if u.is_admin %}<span class="pill">ADMIN</span>{% endif %}
+      <span class="pill {{ 'ok' if u.eligible else 'warn' }}">
+        {{ "ELIGIBLE" if u.eligible else (u.valid_invites ~ "/" ~ needs_invites ~ " INVITES") }}
+      </span>
+    </p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('users_list') }}">← Users</a>
+    <a class="btn" href="{{ url_for('export', kind='users', fmt='csv') }}">⤓ Users CSV</a>
+  </div>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Valid invites</span><strong class="ok">{{ u.valid_invites }}</strong>
+    <span class="dim">{{ u.fake_invites }} flagged fake</span></div>
+  <div class="card stat"><span class="label">Instances</span><strong>{{ u.vps_total }}</strong>
+    <span class="dim">{{ u.vps_running }} running · {{ u.vps_suspended }} held</span></div>
+  <div class="card stat"><span class="label">Goal</span><strong>{{ needs_invites }}</strong>
+    <span class="dim">invites to unlock</span></div>
+  <div class="card stat"><span class="label">First seen</span><strong class="sm">{{ (u.first_vps_at or u.invites_updated_at or "—")[:10] }}</strong>
+    <span class="dim">last: {{ (u.last_seen or "—")[:19] }}</span></div>
+</section>
+
+<section class="grid two">
+  <div class="card">
+    <div class="card-head"><h2>Invites</h2></div>
+    <form method="post" action="{{ url_for('user_action', user_id=u.user_id, action='invites') }}" class="row-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="number" name="invites" min="0" max="10000" value="{{ u.valid_invites }}" required>
+      <button class="btn" type="submit">Set invites</button>
+    </form>
+    <p class="hint">Overrides the invite counter used for provisioning eligibility.</p>
+
+    <div class="card-head spaced"><h2>Access</h2></div>
+    <div class="actions wrap">
+      <form method="post" action="{{ url_for('user_action', user_id=u.user_id, action=('unban' if u.banned else 'ban')) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn {{ 'danger' if not u.banned else '' }}" type="submit"
+                data-confirm="{{ 'Unban' if u.banned else 'Ban' }} {{ u.user_id }}?">
+          {{ "Unban user" if u.banned else "Ban user" }}
+        </button>
+      </form>
+    </div>
+    {% if u.banned %}
+    <p class="hint">Banned {{ u.banned_at[:19] if u.banned_at else "recently" }}
+      {% if u.banned_by %}by <span class="mono">{{ u.banned_by }}</span>{% endif %}.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Profile</h2></div>
+    <div class="kv"><span>Discord id</span><span class="mono">{{ u.user_id }}</span></div>
+    <div class="kv"><span>Username</span><span class="mono">{{ u.username or "not cached" }}</span></div>
+    <div class="kv"><span>Eligible</span><span class="mono">{{ "yes" if u.eligible else "no" }}</span></div>
+    <div class="kv"><span>Completion notified</span><span class="mono">{{ "yes" if u.completion_notified else "no" }}</span></div>
+    <div class="kv"><span>Invite rows updated</span><span class="mono">{{ u.invites_updated_at[:19] if u.invites_updated_at else "—" }}</span></div>
+    <div class="kv"><span>Admin</span><span class="mono">{{ "yes" if u.is_admin else "no" }}</span></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Instances</h2>
+    <span class="dim mono">{{ instances|length }}</span>
+  </div>
+  {% if instances %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Instance</th><th>Status</th><th>Spec</th><th>Endpoint</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for r in instances %}
+      <tr>
+        <td><a class="mono strong" href="{{ url_for('vps_detail', vps_id=r.vps_id) }}">{{ r.vps_id }}</a>
+            <br><span class="dim mono">{{ r.container_name }}</span></td>
+        <td><span class="pill {{ 'ok' if r.status == 'running' else ('warn' if r.status == 'suspended' else '') }}">{{ r.status }}</span></td>
+        <td class="mono">{{ r.memory_mb }} MB · {{ r.cpus }}C · {{ r.disk_gb }} GB</td>
+        <td class="mono">{{ r.ip_address or "—" }}{% if r.ssh_port %}<br><span class="dim">ssh :{{ r.ssh_port }}</span>{% endif %}</td>
+        <td class="mono dim">{{ (r.created_at or "")[:19] }}</td>
+        <td class="actions"><a class="btn tiny" href="{{ url_for('vps_detail', vps_id=r.vps_id) }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="dim">No instances for this user.</p>{% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Activity</h2><span class="dim mono">{{ events|length }} events</span></div>
+  {% if events %}
+  <table class="tight">
+    <thead><tr><th>When</th><th>Instance</th><th>Stage</th><th>Status</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr>
+        <td class="mono">{{ e.created_at[:19] }}</td>
+        <td class="mono">{{ e.vps_id or "—" }}</td>
+        <td>{{ e.stage }}</td>
+        <td><span class="pill {{ 'ok' if e.status not in ('failed', 'error') else 'bad' }}">{{ e.status }}</span></td>
+        <td class="dim">{{ (e.message or "")[:200] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="dim">No activity recorded.</p>{% endif %}
+</section>
+{% endblock %}

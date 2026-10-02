@@ -1,11 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Audit{% endblock %}
+{% block crumb %}Operations / Audit log{% endblock %}
 {% block content %}
-<h1>Audit log</h1>
+<div class="page-head">
+  <div>
+    <h1>Audit log</h1>
+    <p class="dim sub">Every administrative action and deployment event, newest first.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('export', kind='audit', fmt='csv') }}">⤓ Audit CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='deployments', fmt='csv') }}">⤓ Deployments CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='audit', fmt='json') }}">JSON</a>
+  </div>
+</div>
 
 <section class="card">
-  <h2>Admin actions</h2>
-  <table>
+  <div class="card-head">
+    <h2>Admin actions</h2>
+    <span class="dim mono">{{ admin_actions|length }} rows</span>
+  </div>
+  <div class="toolbar">
+    <input type="search" placeholder="Filter actions…" data-filter-input data-filter-target="audit-table">
+  </div>
+  <div class="table-wrap">
+  <table id="audit-table" data-filter-table>
     <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Result</th><th>Source</th></tr></thead>
     <tbody>
     {% for a in admin_actions %}
@@ -22,11 +40,19 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="card">
-  <h2>Deployment events</h2>
-  <table>
+  <div class="card-head">
+    <h2>Deployment events</h2>
+    <span class="dim mono">{{ events|length }} rows</span>
+  </div>
+  <div class="toolbar">
+    <input type="search" placeholder="Filter deployments…" data-filter-input data-filter-target="deploy-table">
+  </div>
+  <div class="table-wrap">
+  <table id="deploy-table" data-filter-table>
     <thead><tr><th>When</th><th>Owner</th><th>Instance</th><th>Stage</th><th>Status</th><th>Message</th></tr></thead>
     <tbody>
     {% for e in events %}
@@ -43,11 +69,12 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 {% if activity.errors %}
-<section class="card bad">
-  <h2>Failures</h2>
+<section class="card danger">
+  <div class="card-head"><h2>Failures</h2></div>
   <ul class="list">
     {% for e in activity.errors %}
     <li><span class="mono">{{ e.created_at[:19] }}</span> · <span class="mono">{{ e.vps_id or "—" }}</span> · {{ e.stage }} · {{ e.message }}</li>

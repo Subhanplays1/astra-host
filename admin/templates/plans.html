@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Plans{% endblock %}
+{% block crumb %}Fleet / Plans{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Plans</h1>
+    <p class="dim sub">Deployment templates — specs, invite gates and availability.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('export', kind='plans', fmt='csv') }}">⤓ CSV</a>
+    <a class="btn" href="{{ url_for('export', kind='plans', fmt='json') }}">⤓ JSON</a>
+  </div>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Plans</span><strong>{{ plans|length }}</strong><span class="dim">defined</span></div>
+  <div class="card stat"><span class="label">Enabled</span><strong class="ok">{{ plans | selectattr('enabled') | list | length }}</strong><span class="dim">deployable</span></div>
+  <div class="card stat"><span class="label">Disabled</span><strong class="warn">{{ plans | rejectattr('enabled') | list | length }}</strong><span class="dim">hidden</span></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>New plan</h2></div>
+  <form method="post" action="{{ url_for('plans_create') }}" class="plan-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Name<input type="text" name="name" maxlength="40" required placeholder="Starter"></label>
+    <label>Memory (MB)<input type="number" name="memory_mb" min="64" max="65536" value="1024" required></label>
+    <label>vCPUs<input type="number" name="cpus" min="1" max="64" value="1" required></label>
+    <label>Disk (GB)<input type="number" name="disk_gb" min="1" max="4096" value="10" required></label>
+    <label>Min invites<input type="number" name="min_invites" min="0" max="1000" value="0" required></label>
+    <label>Sort order<input type="number" name="sort_order" min="0" max="9999" value="0" required></label>
+    <label>Badge<input type="text" name="badge" maxlength="24" placeholder="POPULAR"></label>
+    <label>Price<input type="text" name="price" maxlength="24" placeholder="Free"></label>
+    <label class="wide">Description<input type="text" name="description" maxlength="200" placeholder="Balanced starter instance"></label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Create plan</button>
+    </div>
+  </form>
+</section>
+
+{% if plans %}
+<section class="grid plans">
+  {% for p in plans %}
+  <div class="card plan {{ '' if p.enabled else 'muted' }}">
+    <div class="card-head">
+      <h2>{{ p.name }}{% if p.badge %} <span class="pill">{{ p.badge }}</span>{% endif %}</h2>
+      <span class="pill {{ 'ok' if p.enabled else 'warn' }}">{{ "ENABLED" if p.enabled else "DISABLED" }}</span>
+    </div>
+    <p class="dim">{{ p.description or "No description." }}
+      {% if p.price %} · <span class="mono">{{ p.price }}</span>{% endif %}</p>
+    <div class="kv"><span>Spec</span><span class="mono">{{ p.memory_mb }} MB · {{ p.cpus }}C · {{ p.disk_gb }} GB</span></div>
+    <div class="kv"><span>Min invites</span><span class="mono">{{ p.min_invites }}</span></div>
+    <div class="kv"><span>Sort</span><span class="mono">{{ p.sort_order }}</span></div>
+    <div class="kv"><span>Plan id</span><span class="mono">{{ p.plan_id }}</span></div>
+
+    <form method="post" action="{{ url_for('plan_action', plan_id=p.plan_id, action='update') }}" class="plan-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Name<input type="text" name="name" maxlength="40" value="{{ p.name }}" required></label>
+      <label>Memory (MB)<input type="number" name="memory_mb" min="64" max="65536" value="{{ p.memory_mb }}" required></label>
+      <label>vCPUs<input type="number" name="cpus" min="1" max="64" value="{{ p.cpus }}" required></label>
+      <label>Disk (GB)<input type="number" name="disk_gb" min="1" max="4096" value="{{ p.disk_gb }}" required></label>
+      <label>Min invites<input type="number" name="min_invites" min="0" max="1000" value="{{ p.min_invites }}" required></label>
+      <label>Sort order<input type="number" name="sort_order" min="0" max="9999" value="{{ p.sort_order }}" required></label>
+      <label>Badge<input type="text" name="badge" maxlength="24" value="{{ p.badge }}"></label>
+      <label>Price<input type="text" name="price" maxlength="24" value="{{ p.price }}"></label>
+      <label class="wide">Description<input type="text" name="description" maxlength="200" value="{{ p.description }}"></label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Save changes</button>
+      </div>
+    </form>
+
+    <div class="actions wrap spaced-top">
+      <form method="post" action="{{ url_for('plan_action', plan_id=p.plan_id, action='toggle') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn tiny" type="submit">{{ "Disable" if p.enabled else "Enable" }}</button>
+      </form>
+      <form method="post" action="{{ url_for('plan_action', plan_id=p.plan_id, action='delete') }}" class="inline delete-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="text" name="confirm" class="confirm-input" placeholder="type {{ p.plan_id }} to confirm"
+               pattern="{{ p.plan_id }}" title="Type {{ p.plan_id }} to confirm" required>
+        <button class="btn tiny danger" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card"><p class="dim">No plans defined — create the first one above.</p></section>
+{% endif %}
+{% endblock %}
