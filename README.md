@@ -180,12 +180,24 @@ To expose it with **localhost.run** (free, no account) put the panel on `8080`:
 ADMIN_PANEL_ENABLED=1
 ADMIN_PANEL_PORT=8080
 TUNNEL_PROVIDER=localhost.run
-TUNNEL_LOCALHOSTRUN=ssh -R 80:localhost:{port} localhost.run
+TUNNEL_LOCALHOSTRUN=ssh -R 80:localhost:{port} nokey@localhost.run
 ```
 
 `{port}` is substituted with `ADMIN_PANEL_PORT` at startup. ssh options for
 non-interactive use (`StrictHostKeyChecking`, keepalives, `ExitOnForwardFailure`)
 are appended automatically, so a first connection can never hang the bot.
+
+Two things are handled for you:
+
+- **Anonymous login** — if the destination is `localhost.run` without a user,
+  `nokey@` is prepended. Without it ssh logs in as your local user (`root@`),
+  the server asks for a password nobody can type into a background process, and
+  no tunnel URL is ever printed. Put your own account (`you@localhost.run`) if
+  you use a key.
+- **Banner filtering** — localhost.run greets you with its own console/docs
+  links (`https://admin.localhost.run/`, `https://localhost.run/docs/`); only a
+  real tunnel URL (`https://<word>.localhost.run`) is handed to the panel, and a
+  leftover banner URL stored in the DB is ignored.
 
 **Sign-in flow**
 

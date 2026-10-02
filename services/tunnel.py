@@ -133,6 +133,29 @@ def _harden_ssh(command: str) -> str:
     return f"ssh {_SSH_OPTS} {rest}".rstrip()
 
 
+# ssh destination must carry a user, otherwise it defaults to the local one
+# (root@localhost.run) and the server answers with a password prompt nobody
+# can type into a background process.
+_ANON_RE = re.compile(r"(?<![\w@.])((?:ssh\.)?localhost\.run)")
+
+
+def _anonymous_localhost_run(command: str) -> str:
+    parts = command.split(None, 1)
+    if not parts:
+        return command
+    binary = parts[0].rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if binary != "ssh":
+        return command
+    return _ANON_RE.sub(r"nokey@\1", command, count=1)
+
+
+_PASSWORD_RE = re.compile(r"password\s*:\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _asks_for_password(text: str) -> bool:
+    return bool(text) and _PASSWORD_RE.search(text) is not None
+
+
 class CommandTunnel(TunnelProvider):
     """Runs a shell command and scrapes the first public URL it prints."""
 
@@ -186,10 +209,16 @@ class CommandTunnel(TunnelProvider):
         thread = threading.Thread(target=reader, daemon=True)
         thread.start()
         deadline = time.monotonic() + max(5.0, timeout)
+        asked_password = False
         while time.monotonic() < deadline:
             if result["url"]:
                 break
             if proc.poll() is not None:
+                break
+            if not asked_password and _asks_for_password("".join(collected)):
+                # No human is watching: this can only time out. Stop now and
+                # explain instead of burning the whole tunnel timeout.
+                asked_password = True
                 break
             time.sleep(0.25)
 
@@ -201,11 +230,21 @@ class CommandTunnel(TunnelProvider):
             url = result["url"]
         if not url:
             tail = "".join(collected)[-400:]
+            if not asked_password and _asks_for_password("".join(collected)):
+                asked_password = True
             try:
                 proc.terminate()
             except Exception:  # noqa: BLE001
                 pass
-            raise TunnelError(f"{self.name}: no URL in output ({tail.strip()[:200]})")
+            hint = ""
+            if asked_password:
+                hint = (
+                    " — ssh asked for a password; use the anonymous user "
+                    "(nokey@localhost.run) or configure a key in ~/.ssh/config"
+                )
+            raise TunnelError(
+                f"{self.name}: no URL in output ({tail.strip()[:200]}){hint}"
+            )
         return TunnelResult(url, proc)
 
 
@@ -213,11 +252,11 @@ class LocalhostRunTunnel(CommandTunnel):
     def __init__(self) -> None:
         from config import TUNNEL_LOCALHOSTRUN
 
-        super().__init__(
-            "localhost.run",
+        command = _anonymous_localhost_run(
             TUNNEL_LOCALHOSTRUN
-            or "ssh -R 80:127.0.0.1:{port} nokey@localhost.run -o StrictHostKeyChecking=no",
+            or "ssh -R 80:127.0.0.1:{port} nokey@localhost.run -o StrictHostKeyChecking=no"
         )
+        super().__init__("localhost.run", command)
 
 
 class CloudflareTunnel(CommandTunnel):

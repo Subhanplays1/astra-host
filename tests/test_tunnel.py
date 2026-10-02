@@ -95,4 +95,48 @@ assert mgr.url == REAL, mgr.url
 db.close()
 print("stored url hygiene ok")
 
+# ── 6. ssh destination must carry an explicit anonymous user ─
+from services.tunnel import _anonymous_localhost_run, _asks_for_password  # noqa: E402
+
+assert _anonymous_localhost_run("ssh -R 80:localhost:8080 localhost.run") == (
+    "ssh -R 80:localhost:8080 nokey@localhost.run"
+), "bare localhost.run would log in as root and ask for a password"
+assert _anonymous_localhost_run("ssh -R 80:{port} nokey@localhost.run").count("nokey@") == 1
+assert _anonymous_localhost_run("ssh -R 80:{port} me@localhost.run") == (
+    "ssh -R 80:{port} me@localhost.run"
+), "an operator-provided account must be left alone"
+assert _anonymous_localhost_run("ssh -R 80:{port} ssh.localhost.run").endswith(
+    "nokey@ssh.localhost.run"
+)
+assert _anonymous_localhost_run("cloudflared tunnel --url http://127.0.0.1:{port}") == (
+    "cloudflared tunnel --url http://127.0.0.1:{port}"
+), "non-ssh commands are untouched"
+hardened = _harden_ssh(_anonymous_localhost_run("ssh -R 80:localhost:8080 localhost.run"))
+assert "-o StrictHostKeyChecking=no" in hardened
+assert hardened.index("-o StrictHostKeyChecking=no") < hardened.index("nokey@localhost.run")
+assert ":8080 nokey@localhost.run" in hardened
+
+assert _asks_for_password("root@localhost.run's password: ")
+assert _asks_for_password("Prefix: x\nPassword:")
+assert not _asks_for_password("https://localhost.run/docs/")
+assert not _asks_for_password(REAL)
+print("anonymous user ok")
+
+# ── 7. a password prompt fails fast with a usable hint ───────
+try:
+    CommandTunnel("fake", "echo root@localhost.run password:").start(8080, timeout=20)
+except TunnelError as exc:
+    assert "nokey@localhost.run" in str(exc), exc
+else:
+    raise AssertionError("password prompt should raise TunnelError")
+print("password prompt ok")
+
+# ── 8. real localhost.run command built by the provider ──────
+from services.tunnel import LocalhostRunTunnel  # noqa: E402
+
+lt = LocalhostRunTunnel()
+assert "nokey@localhost.run" in lt.command, lt.command
+assert "StrictHostKeyChecking=no" in lt.command
+print("provider command ok")
+
 print("TUNNEL CHECKS PASSED")
